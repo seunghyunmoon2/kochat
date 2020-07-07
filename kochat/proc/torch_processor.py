@@ -70,9 +70,11 @@ class TorchProcessor(BaseProcessor):
 
         for i in range(self.epochs + 1):
             eta = time()
+
             loss, label, predict = self._test_epoch(i)
             self._visualize(loss, label, predict, mode='test')
             # testing epoch + visualization
+
             loss, label, predict = self._train_epoch(i)
             self._visualize(loss, label, predict, mode='train')
             # training epoch + visualization

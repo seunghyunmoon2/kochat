@@ -48,12 +48,14 @@ class Visualizer:
         :param eval_dict: 다양한 메트릭으로 평가한 결과가 저장된 딕셔너리
         :param mode: train or test
         """
+
         if mode == 'train':
             self.train_loss.append(loss.item())
             self.train_accuracy.append(eval_dict['accuracy'].item())
             self.train_precision.append(eval_dict['precision'].item())
             self.train_recall.append(eval_dict['recall'].item())
             self.train_f1_score.append(eval_dict['f1_score'].item())
+
             self.__save_txt(self.train_accuracy, 'train_accuracy')
             self.__save_txt(self.train_precision, 'train_precision')
             self.__save_txt(self.train_recall, 'train_recall')
@@ -66,6 +68,7 @@ class Visualizer:
             self.test_precision.append(eval_dict['precision'].item())
             self.test_recall.append(eval_dict['recall'].item())
             self.test_f1_score.append(eval_dict['f1_score'].item())
+
             self.__save_txt(self.test_accuracy, 'test_accuracy')
             self.__save_txt(self.test_precision, 'test_precision')
             self.__save_txt(self.test_recall, 'test_recall')
@@ -81,30 +84,30 @@ class Visualizer:
         test가 True인 경우 testing 결과도 함께 그립니다.
         """
 
-        plt.plot(self.__load_txt('train_accuracy'), 'darkgreen', label='train_accuracy')
-        if len(self.test_accuracy) != 0:
+        if len(self.test_accuracy) != 0 and len(self.train_accuracy) != 0:
             plt.plot(self.__load_txt('test_accuracy'), 'limegreen', label='test_accuracy')
-        self.__draw_graph('accuracy')
+            plt.plot(self.__load_txt('train_accuracy'), 'darkgreen', label='train_accuracy')
+            self.__draw_graph('accuracy')
 
-        plt.plot(self.__load_txt('train_precision'), 'darkcyan', label='train_precision')
-        if len(self.test_precision) != 0:
+        if len(self.test_precision) != 0 and len(self.train_precision) != 0:
             plt.plot(self.__load_txt('test_precision'), 'cyan', label='test_precision')
-        self.__draw_graph('precision')
+            plt.plot(self.__load_txt('train_precision'), 'darkcyan', label='train_precision')
+            self.__draw_graph('precision')
 
-        plt.plot(self.__load_txt('train_recall'), 'darkred', label='train_recall')
-        if len(self.test_recall) != 0:
+        if len(self.test_recall) != 0 and len(self.train_recall) != 0:
             plt.plot(self.__load_txt('test_recall'), 'red', label='test_recall')
-        self.__draw_graph('recall')
+            plt.plot(self.__load_txt('train_recall'), 'darkred', label='train_recall')
+            self.__draw_graph('recall')
 
-        plt.plot(self.__load_txt('train_f1_score'), 'darkmagenta', label='train_f1_score')
-        if len(self.test_f1_score) != 0:
+        if len(self.test_f1_score) != 0 and len(self.train_f1_score) != 0:
             plt.plot(self.__load_txt('test_f1_score'), 'magenta', label='test_f1_score')
-        self.__draw_graph('f1_score')
+            plt.plot(self.__load_txt('train_f1_score'), 'darkmagenta', label='train_f1_score')
+            self.__draw_graph('f1_score')
 
-        plt.plot(self.__load_txt('train_loss'), 'darkgoldenrod', label='train_loss')
-        if len(self.test_loss) != 0:
+        if len(self.test_loss) != 0 and len(self.train_loss) != 0:
             plt.plot(self.__load_txt('test_loss'), 'gold', label='test_loss')
-        self.__draw_graph('loss')
+            plt.plot(self.__load_txt('train_loss'), 'darkgoldenrod', label='train_loss')
+            self.__draw_graph('loss')
 
     def draw_matrix(self, cm: np.ndarray, target_names: list, mode: str):
         """

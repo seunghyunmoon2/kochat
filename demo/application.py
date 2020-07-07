@@ -32,7 +32,7 @@ rcn = EntityRecognizer(
 
 kochat = KochatApi(
     dataset=dataset,
-    embed_processor=(emb, True),
+    embed_processor=(emb, False),
     intent_classifier=(clf, True),
     entity_recognizer=(rcn, True),
     scenarios=[

@@ -127,47 +127,11 @@ class IntentClassifier(TorchClassifier):
         Fallback Detector를 학습합니다.
         """
 
-        feats_list, label_list = [], []
-        self.model.eval()
-
-        for (test, ood_train) in zip(self.test_data, self.ood_train):
-            test_feats, test_labels, _ = test
-            ood_train_feats, ood_train_labels, _, = ood_train
-
-            feats = torch.cat([test_feats, ood_train_feats], dim=0).to(self.device)
-            labels = torch.cat([test_labels, ood_train_labels], dim=0).to(self.device)
-            _, feats = self._forward(feats)
-
-            feats_list.append(feats)
-            label_list.append(labels)
-
-        feats = torch.cat(feats_list, dim=0)
-        labels = torch.cat(label_list, dim=0)
-
-        _, distance = self.distance_estimator.fit(feats, labels, mode='test')
-        self.fallback_detector.fit(distance, labels, mode='train')
-
     def _ood_test_epoch(self) -> tuple:
         """
         out of distribution 데이터셋을 가지고
         Fallback Detector를 테스트합니다.
         """
-
-        feats_list, label_list = [], []
-
-        for feats, labels, lengths in self.ood_test:
-            feats, labels = feats.to(self.device), labels.to(self.device)
-            _, feats = self._forward(feats)
-
-            feats_list.append(feats)
-            label_list.append(labels)
-
-        feats = torch.cat(feats_list, dim=0)
-        labels = torch.cat(label_list, dim=0)
-
-        _, distance = self.distance_estimator.fit(feats, labels, mode='test')
-        predicts, labels = self.fallback_detector.fit(distance, labels, mode='test')
-        return predicts, labels
 
     def _forward(self, feats: Tensor, labels: Tensor = None, lengths: Tensor = None) -> tuple:
         """
