@@ -17,7 +17,6 @@ class BaseProcessor:
 
         super().__init__()
         self.train_data, self.test_data = None, None
-        self.ood_train, self.ood_test = None, None
         self.model = model
         self.model_loaded = False
 

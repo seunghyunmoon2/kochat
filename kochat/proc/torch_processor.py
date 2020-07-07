@@ -34,7 +34,7 @@ class TorchProcessor(BaseProcessor):
         self.visualizer = Visualizer(self.model_dir, self.model_file)
         self.metrics = Metrics(self.logging_precision)
         self.model = model.to(self.device)
-        self.__initialize_weights(self.model)
+        self._initialize_weights(self.model)
 
         # Model Optimizer로 Adam Optimizer 사용
         self.optimizers = [Adam(
@@ -50,7 +50,7 @@ class TorchProcessor(BaseProcessor):
             min_lr=self.lr_scheduler_min_lr,
             patience=self.lr_scheduler_patience)
 
-    def fit(self, dataset: tuple, test: bool = True):
+    def fit(self, dataset: tuple):
         """
         Pytorch 모델을 학습/테스트하고
         모델의 출력값을 다양한 방법으로 시각화합니다.
@@ -70,14 +70,12 @@ class TorchProcessor(BaseProcessor):
 
         for i in range(self.epochs + 1):
             eta = time()
+            loss, label, predict = self._test_epoch(i)
+            self._visualize(loss, label, predict, mode='test')
+            # testing epoch + visualization
             loss, label, predict = self._train_epoch(i)
-            self.__visualize(loss, label, predict, mode='train')
+            self._visualize(loss, label, predict, mode='train')
             # training epoch + visualization
-
-            if test:
-                loss, label, predict = self._test_epoch(i)
-                self.__visualize(loss, label, predict, mode='test')
-                # testing epoch + visualization
 
             if i > self.lr_scheduler_warm_up:
                 self.lr_scheduler.step(loss)
@@ -118,7 +116,15 @@ class TorchProcessor(BaseProcessor):
 
         torch.save(self.model.state_dict(), self.model_file + '.pth')
 
-    def __initialize_weights(self, model: nn.Module):
+    def _save_loss(self, loss):
+
+        if len(list(loss.parameters())) != 0:
+            if not os.path.exists(self.model_dir):
+                os.makedirs(self.model_dir)
+
+        torch.save(self.model.state_dict(), self.model_file + '.pth')
+
+    def _initialize_weights(self, model: nn.Module):
         """
         model의 가중치를 초기화합니다.
         기본값으로 He Initalization을 사용합니다.
@@ -129,7 +135,7 @@ class TorchProcessor(BaseProcessor):
         if hasattr(model, 'weight') and model.weight.dim() > 1:
             nn.init.kaiming_uniform(model.weight.data)
 
-    def __visualize(self, loss: Tensor, label: Tensor, predict: Tensor, mode: str):
+    def _visualize(self, loss: Tensor, label: Tensor, predict: Tensor, mode: str):
         """
         모델의 feed forward 결과를 다양한 방법으로 시각화합니다.
 

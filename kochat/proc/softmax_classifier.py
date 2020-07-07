@@ -10,12 +10,11 @@ from torch import nn
 
 from kochat.decorators import intent
 from kochat.loss.base_loss import BaseLoss
-from kochat.proc.fallback_detector import FallbackDetector
-from kochat.proc.intent_classifier import IntentClassifier
+from kochat.proc.torch_classifier import TorchClassifier
 
 
 @intent
-class SoftmaxClassifier(IntentClassifier):
+class SoftmaxClassifier(TorchClassifier):
 
     def __init__(self, model: nn.Module, loss: BaseLoss):
         """
@@ -25,9 +24,7 @@ class SoftmaxClassifier(IntentClassifier):
         :param loss: Loss 함수 종류
         """
 
-        self.label_dict = model.label_dict
         self.loss = loss.to(self.device)
-        self.fallback_detector = FallbackDetector(self.label_dict, self.grid_search)
         self.softmax = nn.Softmax(dim=1)
         super().__init__(model, model.parameters())
 
@@ -44,20 +41,6 @@ class SoftmaxClassifier(IntentClassifier):
 
         self._load_model()
         self.model.eval()
-
-        predict, softmax, _ = self._forward(sequence)
-        softmax = softmax.unsqueeze(1)
-
-        if calibrate:
-            self._calibrate_msg(softmax)
-
-        if self.softmax_fallback_detection_criteria == 'auto':
-            if self.softmax_fallback_detection_threshold.predict(softmax) == 0:
-                return list(self.label_dict)[predict[0]]
-
-        else:
-            if softmax.item() > self.fallback_detection_threshold:
-                return list(self.label_dict)[predict[0]]
 
         return "FALLBACK"
 
@@ -142,44 +125,11 @@ class SoftmaxClassifier(IntentClassifier):
         Fallback Detector를 학습합니다.
         """
 
-        softmax_list, label_list = [], []
-        self.model.eval()
-
-        for (test, ood_train) in zip(self.test_data, self.ood_train):
-            test_feats, test_labels, _ = test
-            ood_train_feats, ood_train_labels, _, = ood_train
-
-            feats = torch.cat([test_feats, ood_train_feats], dim=0).to(self.device)
-            labels = torch.cat([test_labels, ood_train_labels], dim=0).to(self.device)
-            _, softmax, _ = self._forward(feats)
-
-            softmax_list.append(softmax)
-            label_list.append(labels)
-
-        softmax = torch.cat(softmax_list, dim=0).unsqueeze(1)
-        labels = torch.cat(label_list, dim=0)
-        self.fallback_detector.fit(softmax, labels, mode='train')
-
     def _ood_test_epoch(self) -> tuple:
         """
         out of distribution 데이터셋을 가지고
         Fallback Detector를 테스트합니다.
         """
-
-        softmax_list, label_list = [], []
-
-        for feats, labels, lengths in self.ood_test:
-            feats, labels = feats.to(self.device), labels.to(self.device)
-            _, softmax, _ = self._forward(feats)
-
-            softmax_list.append(softmax)
-            label_list.append(labels)
-
-        softmax = torch.cat(softmax_list, dim=0).unsqueeze(1)
-        labels = torch.cat(label_list, dim=0)
-
-        predicts, labels = self.fallback_detector.fit(softmax, labels, mode='test')
-        return predicts, labels
 
     def _forward(self, feats: Tensor, labels: Tensor = None, lengths: Tensor = None) -> tuple:
         """
@@ -196,13 +146,13 @@ class SoftmaxClassifier(IntentClassifier):
         logits = self.model.classifier(feats)
         logits = self.softmax(logits)
 
-        (softmax, predicts) = torch.max(logits, dim=1)
+        (_, predicts) = torch.max(logits, dim=1)
 
         if labels is None:
-            return predicts, softmax, feats
+            return predicts, logits, feats
 
         loss = self.loss.compute_loss(labels, logits, feats)
-        return predicts, softmax, feats, loss
+        return predicts, logits, feats, loss
 
     def _calibrate_msg(self, logits: Tensor):
         print('\n=====================CALIBRATION_MODE=====================\n'

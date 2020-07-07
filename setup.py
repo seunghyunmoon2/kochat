@@ -12,7 +12,7 @@ with open('README.md', encoding='utf-8') as f:
 
 setup(
     name='kochat',
-    version='0.14',
+    version='1.0.4',
     description='Korean opensource chatbot framework',
     long_description=long_description,
     long_description_content_type='text/markdown',
@@ -21,9 +21,7 @@ setup(
     url='https://github.com/Kochat-framework/kochat',
     install_requires=read_file('requirements.txt', lambda f: list(
         filter(bool, map(str.strip, f)))),
-    packages=find_packages(exclude=[
-        'kochat_config.py'
-    ]),
+    packages=find_packages(exclude=['demo', 'knn']),
 
     keywords=['chatbot', 'korean chatbot', 'kochat'],
     python_requires='>=3',

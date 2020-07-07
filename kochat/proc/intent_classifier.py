@@ -1,72 +1,193 @@
 """
-@auther Hyunwoong
-@since 6/28/2020
-@see https://github.com/gusdnd852
+@author : Hyunwoong
+@when : 5/9/2020
+@homepage : https://github.com/gusdnd852
 """
-from abc import ABCMeta, abstractmethod
-from time import time
-from typing import List
-
+import numpy as np
 import torch
+from torch import Tensor
 from torch import nn
-from torch.nn import Parameter
+from torch.optim import SGD
 
 from kochat.decorators import intent
-from kochat.proc.torch_processor import TorchProcessor
+from kochat.loss.base_loss import BaseLoss
+from kochat.proc.torch_classifier import TorchClassifier
 
 
 @intent
-class IntentClassifier(TorchProcessor, metaclass=ABCMeta):
+class IntentClassifier(TorchClassifier):
 
-    def __init__(self, model: nn.Module, parameters: Parameter or List[Parameter]):
-        model = self.__add_classifier(model)
-        super().__init__(model, parameters)
-
-    def fit(self, dataset: tuple, test: bool = True):
+    def __init__(self, model: nn.Module, loss: BaseLoss):
         """
-        Pytorch 모델을 학습/테스트하고 모델의 출력값을 다양한 방법으로 시각화합니다.
-        최종적으로 학습된 모델을 저장합니다.
-        IntentClassifier는 OOD 데이터셋이 존재하면 추가적으로 Fallback Detector도 학습시킵니다.
+        Distance Intent 분류 모델을 학습시키고 테스트 및 추론합니다.
 
-        :param dataset: 학습할 데이터셋
-        :param test: 테스트 여부
+        :param model: Intent Classification 모델
+        :param loss: Loss 함수 종류
         """
 
-        super().fit(dataset, test)
+        self.loss = loss.to(self.device)
+        super().__init__(model, model.parameters())
 
-        # ood 데이터가 있는 경우에 fallback detector 자동 학습/테스트
-        if self.ood_train and self.ood_test:
-            eta = time()
-            self._ood_train_epoch()
-            predicts, labels = self._ood_test_epoch()
+        if len(list(loss.parameters())) != 0:
+            loss_opt = SGD(params=loss.parameters(), lr=self.loss_lr)
+            self.optimizers.append(loss_opt)
 
-            self.metrics.evaluate(labels, predicts, mode='ood')
-            report, _ = self.metrics.report(['in_dist', 'out_dist'], mode='ood')
-            report = report.drop(columns=['macro avg'])
+    def predict(self, sequence: Tensor, calibrate: bool = False) -> str:
+        """
+        사용자의 입력에 inference합니다.
+        OOD 데이터셋이 없는 경우 Fallback Threshold를 직접 수동으로
+        맞춰야 하기 때문에 IntentClassifier는 Calibrate 모드를 지원합니다.
 
-            self.visualizer.draw_report(report, mode='ood')
-            self._print(name=self.fallback_detector.__class__.__name__,
-                        msg='Training, ETA : {eta} sec'.format(eta=round(time() - eta, 4)))
+        :param sequence: 입력 시퀀스
+        :param calibrate: Calibrate 모드 여부
+        :return: 분류 결과 (클래스) 리턴
+        """
 
-    @abstractmethod
+        self._load_model()
+        self.model.eval()
+
+        return "FALLBACK"
+
+    def _train_epoch(self, epoch: int) -> tuple:
+        """
+        학습시 1회 에폭에 대한 행동을 정의합니다.
+
+        :param epoch: 현재 에폭
+        :return: 평균 loss, 예측 리스트, 라벨 리스트
+        """
+
+        loss_list, feats_list, label_list = [], [], []
+        self.model.train()
+
+        for feats, labels, lengths in self.train_data:
+            feats, labels = feats.to(self.device), labels.to(self.device)
+            logits, feats, losses = self._forward(feats, labels)
+            losses = self._backward(losses)
+
+            loss_list.append(losses)
+            feats_list.append(feats)
+            label_list.append(labels)
+
+        losses = sum(loss_list) / len(loss_list)
+        feats = torch.cat(feats_list, dim=0)
+        labels = torch.cat(label_list, dim=0)
+        predicts, distance = self.loss.predict(feats)
+
+        if epoch % self.visualization_epoch == 0:
+            self.visualizer.draw_feature_space(
+                feats=feats,
+                labels=labels,
+                label_dict=self.label_dict,
+                loss_name=self.loss.__class__.__name__,
+                d_loss=self.d_loss,
+                epoch=epoch,
+                mode='train')
+
+        return losses, labels, predicts
+
+    def _test_epoch(self, epoch: int) -> tuple:
+        """
+        테스트시 1회 에폭에 대한 행동을 정의합니다.
+
+        :param epoch: 현재 에폭
+        :return: 평균 loss, 예측 리스트, 라벨 리스트
+        """
+
+        loss_list, feats_list, label_list = [], [], []
+        self.model.eval()
+
+        for feats, labels, lengths in self.test_data:
+            feats, labels = feats.to(self.device), labels.to(self.device)
+            logits, feats, losses = self._forward(feats, labels)
+
+            loss_list.append(losses)
+            feats_list.append(feats)
+            label_list.append(labels)
+
+        losses = sum(loss_list) / len(loss_list)
+        feats = torch.cat(feats_list, dim=0)
+        labels = torch.cat(label_list, dim=0)
+
+        if epoch % self.visualization_epoch == 0:
+            self.visualizer.draw_feature_space(
+                feats=feats,
+                labels=labels,
+                label_dict=self.label_dict,
+                loss_name=self.loss.__class__.__name__,
+                d_loss=self.d_loss,
+                epoch=epoch,
+                mode='test')
+
+        predicts, distance = self.loss.predict(feats)
+        return losses, labels, predicts
+
     def _ood_train_epoch(self):
-        raise NotImplementedError
+        """
+        out of distribution 데이터셋을 가지고
+        Fallback Detector를 학습합니다.
+        """
 
-    @abstractmethod
-    def _ood_test_epoch(self):
-        raise NotImplementedError
+        feats_list, label_list = [], []
+        self.model.eval()
 
-    @abstractmethod
-    def _calibrate_msg(self, *args):
-        raise NotImplementedError
+        for (test, ood_train) in zip(self.test_data, self.ood_train):
+            test_feats, test_labels, _ = test
+            ood_train_feats, ood_train_labels, _, = ood_train
 
-    def __add_classifier(self, model):
-        sample = torch.randn(1, self.max_len, self.vector_size)
-        sample = sample.to(self.device)
-        output_size = model.to(self.device)(sample)
+            feats = torch.cat([test_feats, ood_train_feats], dim=0).to(self.device)
+            labels = torch.cat([test_labels, ood_train_labels], dim=0).to(self.device)
+            _, feats = self._forward(feats)
 
-        features = nn.Linear(output_size.shape[1], self.d_loss)
-        classifier = nn.Linear(self.d_loss, len(model.label_dict))
-        setattr(model, 'features', features.to(self.device))
-        setattr(model, 'classifier', classifier.to(self.device))
-        return model
+            feats_list.append(feats)
+            label_list.append(labels)
+
+        feats = torch.cat(feats_list, dim=0)
+        labels = torch.cat(label_list, dim=0)
+
+        _, distance = self.distance_estimator.fit(feats, labels, mode='test')
+        self.fallback_detector.fit(distance, labels, mode='train')
+
+    def _ood_test_epoch(self) -> tuple:
+        """
+        out of distribution 데이터셋을 가지고
+        Fallback Detector를 테스트합니다.
+        """
+
+        feats_list, label_list = [], []
+
+        for feats, labels, lengths in self.ood_test:
+            feats, labels = feats.to(self.device), labels.to(self.device)
+            _, feats = self._forward(feats)
+
+            feats_list.append(feats)
+            label_list.append(labels)
+
+        feats = torch.cat(feats_list, dim=0)
+        labels = torch.cat(label_list, dim=0)
+
+        _, distance = self.distance_estimator.fit(feats, labels, mode='test')
+        predicts, labels = self.fallback_detector.fit(distance, labels, mode='test')
+        return predicts, labels
+
+    def _forward(self, feats: Tensor, labels: Tensor = None, lengths: Tensor = None) -> tuple:
+        """
+        모델의 feed forward에 대한 행동을 정의합니다.
+
+        :param feats: 입력 feature
+        :param labels: label 리스트
+        :param lengths: 패딩을 제외한 입력의 길이 리스트
+        :return: 모델의 출력(logits), features, loss
+        """
+
+        feats = self.model(feats)
+        feats = self.model.features(feats)
+        logits = self.model.classifier(feats)
+
+        if labels is None:
+            return logits, feats
+
+        loss = self.loss.compute_loss(labels, logits, feats)
+        return logits, feats, loss
+
+    def _calibrate_msg(self, distance: np.ndarray):
+        print()

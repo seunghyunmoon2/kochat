@@ -1,3 +1,18 @@
+# Copyright 2020 Kochat. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+
 import os
 import random
 
@@ -70,8 +85,8 @@ class Dataset:
         if self.ood:
             ood_dataset = self.__load_ood()
             ood_train, ood_test = self.__make_intent(ood_dataset, emb_processor)
-            ood_train, ood_test = self.__mini_batch(ood_train), self.__mini_batch(ood_test)
-            return intent_train, intent_test, ood_train, ood_test
+            ood_dataset = torch.cat([ood_train[0], ood_test[0]], dim=0)
+            return intent_train, intent_test, ood_dataset
 
         else:
             return intent_train, intent_test
@@ -120,7 +135,7 @@ class Dataset:
 
         for ood in os.listdir(self.ood_data_dir):
             if ood != '__init__.py':  # __init__ 파일 제외
-                ood = pd.read_csv(self.ood_data_dir + ood)
+                ood = pd.read_csv(self.ood_data_dir + ood, encoding='utf-8')
                 ood_dataset.append(ood)
 
         return pd.concat(ood_dataset)
